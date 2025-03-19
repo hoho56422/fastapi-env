@@ -1,0 +1,308 @@
+From 8616ce9205561c734bb8bcd040b782c589753fe1 Mon Sep 17 00:00:00 2001
+From: SaviorDT <tony20040424@gmail.com>
+Date: Wed, 19 Mar 2025 18:04:45 +0800
+Subject: [PATCH 1/2] Intergrate frontend and backend.
+
+---
+ .gitignore                               |   3 +-
+ dockerfile => backend_fastapi/dockerfile |   0
+ backend_fastapi/entrypoint.sh            |  23 ++++
+ docker-compose.yaml                      | 140 ++++++++++++-----------
+ frontend_vue/entrypoint.sh               |  16 +++
+ mariadb/init.sql                         |   4 +
+ requirements.txt                         |  42 -------
+ 7 files changed, 121 insertions(+), 107 deletions(-)
+ rename dockerfile => backend_fastapi/dockerfile (100%)
+ create mode 100644 backend_fastapi/entrypoint.sh
+ create mode 100644 frontend_vue/entrypoint.sh
+ create mode 100644 mariadb/init.sql
+ delete mode 100644 requirements.txt
+
+diff --git a/.gitignore b/.gitignore
+index 3d1f187..4bac7aa 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,4 +1,5 @@
+ venv
+ .env
+-app/*
++backend_fastapi/app/
++frontend_vue/app/
+ *.bak
+\ No newline at end of file
+diff --git a/dockerfile b/backend_fastapi/dockerfile
+similarity index 100%
+rename from dockerfile
+rename to backend_fastapi/dockerfile
+diff --git a/backend_fastapi/entrypoint.sh b/backend_fastapi/entrypoint.sh
+new file mode 100644
+index 0000000..8ac5fd3
+--- /dev/null
++++ b/backend_fastapi/entrypoint.sh
+@@ -0,0 +1,23 @@
++#!/bin/bash
++
++# Initialize
++if [ ! -d ".git" ]; then
++    echo "Cloning repository..."
++    git init
++    git remote add origin https://github.com/NYCU-SDC/main-branch-backend.git
++    git pull origin main
++    git checkout main
++    git branch -d master
++
++    # copy .env file for quick setup
++    cp .env.example .env
++
++    echo "Running pip install for fastapi..."
++    pip install --upgrade pip
++    pip install --no-cache-dir --upgrade -r ./requirements.txt
++    echo "Running database migrations..."
++    alembic upgrade head
++fi
++
++echo "Running server..."
++uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+\ No newline at end of file
+diff --git a/docker-compose.yaml b/docker-compose.yaml
+index 1f2907e..0432165 100644
+--- a/docker-compose.yaml
++++ b/docker-compose.yaml
+@@ -1,73 +1,85 @@
+-version: '3.9'
+-
+ services:
+-  postgres:
+-    image: postgres:13
+-    container_name: sdc_postgres
+-    environment:
+-      POSTGRES_USER: user
+-      POSTGRES_PASSWORD: password
+-      POSTGRES_DB: fastapi
+-    networks:
+-      - intranet
+-    ports:
+-      - "5432:5432"
+-    volumes:
+-      - postgres_data:/var/lib/postgresql/data
++  # postgres:
++  #   image: postgres:13
++  #   container_name: sdc_postgres
++  #   environment:
++  #     POSTGRES_USER: user
++  #     POSTGRES_PASSWORD: password
++  #     POSTGRES_DB: fastapi
++  #   networks:
++  #     - intranet
++  #   ports:
++  #     - "5432:5432"
++  #   volumes:
++  #     - postgres_data:/var/lib/postgresql/data
+ 
+-  mariadb:
+-    image: mariadb:10.6
+-    container_name: sdc_mariadb
+-    restart: always
+-    environment:
+-      MYSQL_ROOT_PASSWORD: rootpassword
+-    networks:
+-      - intranet
+-    volumes:
+-      - mariadb_data:/var/lib/mysql
++  # mariadb:
++  #   image: mariadb:10.6
++  #   container_name: sdc_mariadb
++  #   environment:
++  #     MYSQL_ROOT_PASSWORD: rootpassword
++  #   networks:
++  #     - intranet
++  #   volumes:
++  #     - mariadb_data:/var/lib/mysql
++  #     - ./mariadb/init.sql:/docker-entrypoint-initdb.d/init.sql
+ 
+-  pgadmin4:
+-    image: dpage/pgadmin4
+-    container_name: sdc_pgadmin4
+-    environment:
+-      - PGADMIN_DEFAULT_EMAIL=user@example.com
+-      - PGADMIN_DEFAULT_PASSWORD=password
+-    networks:
+-      - intranet
+-    ports:
+-      - "5050:80"
+-    depends_on:
+-      - postgres
+ 
+-  phpmyadmin:
+-    image: phpmyadmin
+-    container_name: sdc_phpmyadmin
+-    restart: always
+-    environment:
+-      PMA_HOST: mariadb
+-      MYSQL_ROOT_PASSWORD: rootpassword
+-    networks:
+-      - intranet
+-    ports:
+-      - "8081:80"
+-    depends_on:
+-      - mariadb
++  # pgadmin4:
++  #   image: dpage/pgadmin4
++  #   container_name: sdc_pgadmin4
++  #   environment:
++  #     - PGADMIN_DEFAULT_EMAIL=user@example.com
++  #     - PGADMIN_DEFAULT_PASSWORD=password
++  #   networks:
++  #     - intranet
++  #   ports:
++  #     - "5050:80"
++  #   depends_on:
++  #     - postgres
++
++  # phpmyadmin:
++  #   image: phpmyadmin
++  #   container_name: sdc_phpmyadmin
++  #   environment:
++  #     PMA_HOST: mariadb
++  #     MYSQL_ROOT_PASSWORD: rootpassword
++  #   networks:
++  #     - intranet
++  #   ports:
++  #     - "8081:80"
++  #   depends_on:
++  #     - mariadb
+ 
+-  app:
+-    build: ./
+-    container_name: sdc_fastapi_app
+-    restart: always
+-    networks:
+-      - intranet
++  # backend-fastapi:
++  #   image: python:3.10
++  #   container_name: sdc_fastapi_app
++  #   working_dir: /code/app
++  #   networks:
++  #     - intranet
++  #   volumes:
++  #     - ./backend_fastapi/app:/code/app
++  #     - ./backend_fastapi/entrypoint.sh:/code/entrypoint.sh
++  #   ports:
++  #     - "8000:8000"
++  #   entrypoint: ["/code/entrypoint.sh"]
++  #   depends_on:
++  #     - mariadb
++  frontend-vue:
++    build: ./frontend_vue
++    container_name: sdc_vue_app
++    working_dir: /code/app
+     volumes:
+-      - ./app:/code/app
++      - ./frontend_vue/app:/code/app
++      - ./frontend_vue/entrypoint.sh:/code/entrypoint.sh
+     ports:
+-      - "8080:8000"
++      - "8080:8080"
++    entrypoint: ["/code/entrypoint.sh"]
+ 
+-networks:
+-  intranet:
+-    driver: bridge
++# networks:
++#   intranet:
++#     driver: bridge
+ 
+-volumes:
+-  postgres_data:
+-  mariadb_data:
+\ No newline at end of file
++# volumes:
++#   postgres_data:
++  # mariadb_data:
+\ No newline at end of file
+diff --git a/frontend_vue/entrypoint.sh b/frontend_vue/entrypoint.sh
+new file mode 100644
+index 0000000..1b6b428
+--- /dev/null
++++ b/frontend_vue/entrypoint.sh
+@@ -0,0 +1,16 @@
++#!/bin/bash
++
++# Initialize
++if [ ! -d ".git" ]; then
++    echo "Cloning repository..."
++    git init
++    git remote add origin https://github.com/NYCU-SDC/main-branch-backend.git
++    git pull origin main
++    git checkout main
++    git branch -d master
++
++    echo "Running npm install for vue..."
++    npm install
++fi
++
++npm run serve
+\ No newline at end of file
+diff --git a/mariadb/init.sql b/mariadb/init.sql
+new file mode 100644
+index 0000000..fc2c584
+--- /dev/null
++++ b/mariadb/init.sql
+@@ -0,0 +1,4 @@
++CREATE DATABASE IF NOT EXISTS sdc_learn;
++CREATE USER IF NOT EXISTS 'sdc_learn'@'%' IDENTIFIED BY 'sdc_learn';
++GRANT ALL PRIVILEGES ON sdc_learn.* TO 'sdc_learn'@'%';
++FLUSH PRIVILEGES;
+\ No newline at end of file
+diff --git a/requirements.txt b/requirements.txt
+deleted file mode 100644
+index 379fcb3..0000000
+--- a/requirements.txt
++++ /dev/null
+@@ -1,42 +0,0 @@
+-alembic==1.13.2
+-annotated-types==0.7.0
+-anyio==4.4.0
+-Authlib==1.3.2
+-bcrypt==4.2.0
+-certifi==2024.7.4
+-cffi==1.17.0
+-click==8.1.7
+-coverage==7.6.1
+-cryptography==43.0.0
+-ecdsa==0.19.0
+-exceptiongroup==1.2.2
+-fastapi==0.112.2
+-greenlet==3.0.3
+-h11==0.14.0
+-httpcore==1.0.5
+-httpx==0.27.2
+-idna==3.8
+-iniconfig==2.0.0
+-itsdangerous==2.2.0
+-Mako==1.3.5
+-MarkupSafe==2.1.5
+-mysqlclient==2.2.4
+-packaging==24.1
+-passlib==1.7.4
+-pluggy==1.5.0
+-pyasn1==0.6.0
+-pycparser==2.22
+-pydantic==2.8.2
+-pydantic_core==2.20.1
+-pytest==8.3.2
+-pytest-cov==5.0.0
+-python-dotenv==1.0.1
+-python-jose==3.3.0
+-rsa==4.9
+-six==1.16.0
+-sniffio==1.3.1
+-SQLAlchemy==2.0.32
+-starlette==0.38.2
+-tomli==2.0.1
+-typing_extensions==4.12.2
+-uvicorn==0.30.6
+\ No newline at end of file
+-- 
+2.43.0
+
